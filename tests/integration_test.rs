@@ -24,6 +24,10 @@ fn test_integration_full_flow() {
     // clone
     run(Command::new("git").arg("clone").arg(&remote_dir).arg(&local_dir), base);
 
+    // configure git user in the cloned repo
+    run(Command::new("git").arg("-C").arg(&local_dir).arg("config").arg("user.email").arg("test@example.com"), base);
+    run(Command::new("git").arg("-C").arg(&local_dir).arg("config").arg("user.name").arg("Test User"), base);
+
     // initial commit on main
     run(Command::new("git").arg("-C").arg(&local_dir).arg("checkout").arg("-b").arg("main"), base);
     std::fs::write(local_dir.join("file.txt"), "initial").unwrap();
