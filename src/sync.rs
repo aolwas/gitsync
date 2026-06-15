@@ -1,145 +1,159 @@
-use crate::git::Repo;
 use anyhow::Result;
+use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
-pub struct Change {
-    pub branch: String,
-    pub action: Action,
-}
+use crate::git::{Remote, get_commit_difference, get_commit_sha};
+use crate::output::OutputManager;
 
-#[derive(Debug, Clone)]
-pub enum Action {
-    FastForward { upstream: String },
-    DeleteMerged { into: String },
-    DeleteUpstreamGone,
-}
+pub fn process_branch(
+    branch: &str,
+    remote: &Remote,
+    branch_to_remote: &HashMap<String, String>,
+    current_branch: &str,
+    default_branch: &str,
+    full_default_branch: &str,
+    dry_run: bool,
+    output_manager: &OutputManager,
+) -> Result<()> {
+    let full_branch = format!("refs/heads/{}", branch);
+    let mut remote_branch = format!("refs/remotes/{}/{}", remote.name, branch);
+    let mut gone = false;
 
-impl std::fmt::Display for Action {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Action::FastForward { upstream } => write!(f, "Fast-forward from {}", upstream),
-            Action::DeleteMerged { into } => write!(f, "Delete (merged into {})", into),
-            Action::DeleteUpstreamGone => write!(f, "Delete (upstream gone)"),
-        }
-    }
-}
+    // Check if branch has upstream configuration
+    if let Some(branch_remote) = branch_to_remote.get(branch) {
+        if *branch_remote == remote.name {
+            let upstream_ref = format!("{}@{{upstream}}", branch);
+            match get_commit_sha(&upstream_ref) {
+                Ok(sha) if sha != "unknown" => {
+                    // Get the actual upstream branch reference
+                    let upstream_full = std::process::Command::new("git")
+                        .args(["rev-parse", "--symbolic-full-name", &upstream_ref])
+                        .output()?;
 
-pub struct Syncer {
-    repo: Repo,
-    current_branch: String,
-    default_branch: String,
-}
-
-impl Syncer {
-    pub fn new(repo: Repo, default_branch: &str) -> Result<Self> {
-        let current_branch = repo.current_branch().unwrap_or_else(|_| "main".to_string());
-        Ok(Syncer {
-            repo,
-            current_branch,
-            default_branch: default_branch.to_string(),
-        })
-    }
-
-    pub fn find_changes(&self) -> Result<Vec<Change>> {
-        let branches = self.repo.local_branches()?;
-        let mut changes = Vec::new();
-
-        for branch in branches {
-            if branch.name == self.current_branch {
-                continue;
-            }
-
-            if let Some(upstream) = &branch.tracking {
-                // Check for fast-forward
-                if self.repo.can_fastforward(&branch.name, upstream)? {
-                    changes.push(Change {
-                        branch: branch.name.clone(),
-                        action: Action::FastForward {
-                            upstream: upstream.clone(),
-                        },
-                    });
-                    continue;
+                    if upstream_full.status.success() {
+                        let upstream_str = String::from_utf8(upstream_full.stdout)?;
+                        remote_branch = upstream_str.trim().to_string();
+                    }
                 }
-
-                // Check if upstream is gone
-                if !self.repo.upstream_exists(upstream)? {
-                    changes.push(Change {
-                        branch: branch.name.clone(),
-                        action: Action::DeleteUpstreamGone,
-                    });
-                    continue;
-                }
-
-                // Check if merged into default branch
-                if self.repo.is_merged(&branch.name, &self.default_branch)? {
-                    changes.push(Change {
-                        branch: branch.name.clone(),
-                        action: Action::DeleteMerged {
-                            into: self.default_branch.clone(),
-                        },
-                    });
+                _ => {
+                    // Upstream is gone
+                    remote_branch = String::new();
+                    gone = true;
                 }
             }
         }
-
-        Ok(changes)
+    } else if !crate::git::has_remote_branch(&remote_branch)? {
+        remote_branch = String::new();
     }
 
-    pub fn apply_changes(&self, changes: &[Change]) -> Result<()> {
-        for change in changes {
-            match &change.action {
-                Action::FastForward { upstream } => {
-                    self.repo.fastforward(&change.branch, upstream)?;
-                    println!("  ✓ Fast-forwarded {}", change.branch);
+    if !remote_branch.is_empty() {
+        // Branch has corresponding remote branch
+        if let Ok((ahead, behind)) = get_commit_difference(&full_branch, &remote_branch) {
+            if ahead == 0 && behind == 0 {
+                // Branches are identical, do nothing
+                return Ok(());
+            } else if ahead == 0 && behind > 0 {
+                // Local branch is behind, can fast-forward
+                let old_commit = get_commit_sha(&full_branch)?;
+                let old_commit_short = if old_commit.len() > 7 {
+                    &old_commit[..7]
+                } else {
+                    &old_commit
+                };
+
+                if dry_run {
+                    output_manager.info(&format!(
+                        "[DRY RUN] Would update branch '{}' (was {}).",
+                        branch, old_commit_short
+                    ));
+                } else {
+                    // Perform the update
+                    if branch == current_branch {
+                        // For current branch, use merge --ff-only
+                        let update_result = std::process::Command::new("git")
+                            .args(["merge", "--ff-only", "--quiet", &remote_branch])
+                            .output();
+
+                        if let Ok(cmd_output) = update_result {
+                            if !cmd_output.status.success() {
+                                output_manager.warning(&format!(
+                                    "warning: couldn't fast-forward '{}'",
+                                    branch
+                                ));
+                            } else {
+                                output_manager.success(&format!(
+                                    "Updated branch '{}' (was {}).",
+                                    branch, old_commit_short
+                                ));
+                            }
+                        }
+                    } else {
+                        // For other branches, use update-ref
+                        let update_result = std::process::Command::new("git")
+                            .args(["update-ref", &full_branch, &remote_branch])
+                            .output();
+
+                        if let Ok(cmd_output) = update_result {
+                            if !cmd_output.status.success() {
+                                output_manager.warning(&format!(
+                                    "warning: couldn't fast-forward '{}'",
+                                    branch
+                                ));
+                            } else {
+                                output_manager.success(&format!(
+                                    "Updated branch '{}' (was {}).",
+                                    branch, old_commit_short
+                                ));
+                            }
+                        }
+                    }
                 }
-                Action::DeleteMerged { .. } | Action::DeleteUpstreamGone => {
-                    self.repo.delete_branch(&change.branch)?;
-                    println!("  ✓ Deleted {}", change.branch);
-                }
+            } else {
+                // Local branch has unpushed commits
+                output_manager.warning(&format!(
+                    "warning: '{}' seems to contain unpushed commits",
+                    branch
+                ));
             }
         }
-        Ok(())
-    }
-}
+    } else if gone {
+        // Remote branch was deleted
+        if let Ok((ahead, behind)) = get_commit_difference(&full_branch, full_default_branch) {
+            if ahead == 0 && behind >= 0 {
+                // Branch is ancestor of default branch, safe to delete
+                let old_commit = get_commit_sha(&full_branch)?;
+                let old_commit_short = if old_commit.len() > 7 {
+                    &old_commit[..7]
+                } else {
+                    &old_commit
+                };
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+                if dry_run {
+                    output_manager.info(&format!(
+                        "[DRY RUN] Would delete branch '{}' (was {}).",
+                        branch, old_commit_short
+                    ));
+                } else {
+                    // Need to checkout default branch if deleting current branch
+                    if branch == current_branch {
+                        let _checkout_result = std::process::Command::new("git")
+                            .args(["checkout", "--quiet", default_branch])
+                            .output();
+                    }
 
-    #[test]
-    fn test_action_display_fast_forward() {
-        let action = Action::FastForward {
-            upstream: "origin/main".to_string(),
-        };
-        assert_eq!(action.to_string(), "Fast-forward from origin/main");
+                    // Delete the branch
+                    let _delete_result = std::process::Command::new("git")
+                        .args(["branch", "-D", branch])
+                        .output();
+                }
+            } else {
+                // Branch appears not merged
+                output_manager.warning(&format!(
+                    "warning: '{}' was deleted on {}, but appears not merged into '{}'",
+                    branch, remote.name, default_branch
+                ));
+            }
+        }
     }
 
-    #[test]
-    fn test_action_display_delete_merged() {
-        let action = Action::DeleteMerged {
-            into: "main".to_string(),
-        };
-        assert_eq!(action.to_string(), "Delete (merged into main)");
-    }
-
-    #[test]
-    fn test_action_display_delete_upstream_gone() {
-        let action = Action::DeleteUpstreamGone;
-        assert_eq!(action.to_string(), "Delete (upstream gone)");
-    }
-
-    #[test]
-    fn test_change_structure() {
-        let change = Change {
-            branch: "feature".to_string(),
-            action: Action::FastForward {
-                upstream: "origin/feature".to_string(),
-            },
-        };
-        assert_eq!(change.branch, "feature");
-        assert_eq!(
-            change.action.to_string(),
-            "Fast-forward from origin/feature"
-        );
-    }
+    Ok(())
 }

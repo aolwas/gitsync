@@ -1,81 +1,72 @@
+use anyhow::{Context, Result};
+use clap::Parser;
+
+use std::process;
+
+mod cli;
+
 mod git;
+mod output;
 mod sync;
 
-use anyhow::Result;
-use clap::Parser;
-use std::io::{self, Write};
+use cli::Args;
+use output::OutputManager;
 
-#[derive(Parser)]
-#[command(name = "git-sync")]
-#[command(about = "Sync local branches with remote", long_about = None)]
-struct Args {
-    /// Show what would be done without making changes
-    #[arg(long)]
-    dry_run: bool,
-
-    /// Repository path (defaults to current directory)
-    #[arg(short = 'C')]
-    repo: Option<String>,
-
-    /// Default branch to check for merged branches
-    #[arg(short = 'd', long, default_value = "main")]
-    default_branch: String,
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("{}", e);
+        process::exit(1);
+    }
 }
 
-fn main() -> Result<()> {
+fn run() -> Result<()> {
     let args = Args::parse();
-    
-    let repo_path = args.repo.as_deref().unwrap_or(".");
-    
-    // Open repo and fetch
-    println!("Opening repository at {}", repo_path);
-    let repo = git::Repo::open(repo_path)?;
-    
-    println!("Fetching remotes...");
-    repo.fetch()?;
-    
-    // Find changes
-    let syncer = sync::Syncer::new(repo, &args.default_branch)?;
-    let changes = syncer.find_changes()?;
-    
-    if changes.is_empty() {
-        println!("✓ Everything up to date!");
-        return Ok(());
+    let output = OutputManager::new(args.verbose, args.color);
+
+    // Check if current directory is a git repository
+    if !git::is_git_repo().context("Failed to check if current directory is a git repository")? {
+        return Err(anyhow::anyhow!("fatal: Not a git repository"));
     }
-    
-    // Display changes
-    println!("\nProposed changes:");
-    let mut deletions = Vec::new();
-    for change in &changes {
-        println!("  • {}: {}", change.branch, change.action);
-        if matches!(change.action, sync::Action::DeleteMerged { .. } | sync::Action::DeleteUpstreamGone) {
-            deletions.push(change.clone());
-        }
+
+    // Get main remote
+    let remote = git::get_main_remote().context("Failed to get main remote")?;
+    output.verbose(&format!("Using remote: {}", remote.name));
+
+    // Get default branch
+    let default_branch =
+        git::get_default_branch(&remote).context("Failed to get default branch")?;
+    output.verbose(&format!("Default branch: {}", default_branch));
+
+    // Fetch from remote
+    git::fetch_from_remote(&remote, args.dry_run).context("Failed to fetch from remote")?;
+
+    // Get current branch
+    let current_branch = git::get_current_branch().context("Failed to get current branch")?;
+    output.verbose(&format!("Current branch: {}", current_branch));
+
+    // Get branch to remote mapping
+    let branch_to_remote =
+        git::get_branch_to_remote_mapping().context("Failed to get branch to remote mapping")?;
+
+    // Get all local branches
+    let branches = git::get_local_branches().context("Failed to get local branches")?;
+
+    // Process each branch
+    let full_default_branch = format!("refs/remotes/{}/{}", remote.name, default_branch);
+
+    for branch in branches {
+        sync::process_branch(
+            &branch,
+            &remote,
+            &branch_to_remote,
+            &current_branch,
+            &default_branch,
+            &full_default_branch,
+            args.dry_run,
+            &output,
+        )
+        .context(format!("Failed to process branch {}", branch))?;
     }
-    
-    if args.dry_run {
-        println!("\n[DRY RUN] No changes applied");
-        return Ok(());
-    }
-    
-    // Prompt for confirmation if there are deletions
-    if !deletions.is_empty() {
-        println!("\n{} branch(es) will be deleted. Continue? (y/n) ", deletions.len());
-        io::stdout().flush()?;
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
-    }
-    
-    // Apply changes
-    println!("\nApplying changes...");
-    syncer.apply_changes(&changes)?;
-    
-    println!("\n✓ Done!");
+
     Ok(())
 }
