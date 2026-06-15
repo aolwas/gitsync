@@ -131,6 +131,13 @@ fn test_dry_run_with_remote() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
+    // Get the current branch to use for assertions
+    let branch_check = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(path)
+        .output()?;
+    let current_branch = String::from_utf8(branch_check.stdout)?.trim().to_string();
+
     // Add a remote
     Command::new("git")
         .args([
@@ -142,13 +149,26 @@ fn test_dry_run_with_remote() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
+    // Set up the remote to have a default branch that matches our current branch
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            &format!("refs/remotes/origin/HEAD"),
+            &format!("refs/remotes/origin/{}", current_branch),
+        ])
+        .current_dir(path)
+        .output()?;
+
     let mut cmd = Command::cargo_bin("gitsync")?;
     cmd.arg("--dry-run").arg("--verbose").current_dir(path);
 
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Using remote: origin"))
-        .stdout(predicate::str::contains("Default branch: main"))
+        .stdout(predicate::str::contains(&format!(
+            "Default branch: {}",
+            current_branch
+        )))
         .stdout(predicate::str::contains(
             "[DRY RUN] Would fetch from remote: origin",
         ));
@@ -193,6 +213,13 @@ fn test_verbose_output() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
+    // Get the current branch to use for assertions
+    let branch_check = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(path)
+        .output()?;
+    let current_branch = String::from_utf8(branch_check.stdout)?.trim().to_string();
+
     // Add a remote
     Command::new("git")
         .args([
@@ -200,6 +227,16 @@ fn test_verbose_output() -> Result<(), Box<dyn std::error::Error>> {
             "add",
             "origin",
             "https://github.com/example/repo.git",
+        ])
+        .current_dir(path)
+        .output()?;
+
+    // Set up the remote to have a default branch that matches our current branch
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            &format!("refs/remotes/origin/HEAD"),
+            &format!("refs/remotes/origin/{}", current_branch),
         ])
         .current_dir(path)
         .output()?;
@@ -212,8 +249,8 @@ fn test_verbose_output() -> Result<(), Box<dyn std::error::Error>> {
     // Check that verbose output contains expected messages
     let stdout = String::from_utf8(output.stdout)?;
     assert!(stdout.contains("Using remote: origin"));
-    assert!(stdout.contains("Default branch: main"));
-    assert!(stdout.contains("Current branch: main"));
+    assert!(stdout.contains(&format!("Default branch: {}", current_branch)));
+    assert!(stdout.contains(&format!("Current branch: {}", current_branch)));
 
     dir.close()?;
     Ok(())
@@ -316,6 +353,13 @@ fn test_branch_deletion_detection() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
+    // Get the current branch to use for assertions
+    let branch_check = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(path)
+        .output()?;
+    let current_branch = String::from_utf8(branch_check.stdout)?.trim().to_string();
+
     // Add a remote
     Command::new("git")
         .args([
@@ -323,6 +367,16 @@ fn test_branch_deletion_detection() -> Result<(), Box<dyn std::error::Error>> {
             "add",
             "origin",
             "https://github.com/example/repo.git",
+        ])
+        .current_dir(path)
+        .output()?;
+
+    // Set up the remote to have a default branch that matches our current branch
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            &format!("refs/remotes/origin/HEAD"),
+            &format!("refs/remotes/origin/{}", current_branch),
         ])
         .current_dir(path)
         .output()?;
@@ -336,7 +390,7 @@ fn test_branch_deletion_detection() -> Result<(), Box<dyn std::error::Error>> {
 
     // Should show basic sync information
     assert!(stdout.contains("Using remote: origin"));
-    assert!(stdout.contains("Default branch: main"));
+    assert!(stdout.contains(&format!("Default branch: {}", current_branch)));
     assert!(stdout.contains("[DRY RUN] Would fetch from remote: origin"));
 
     dir.close()?;
