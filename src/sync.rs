@@ -134,9 +134,18 @@ pub fn process_branch(
                 }
 
                 // Delete the branch
-                let _delete_result = std::process::Command::new("git")
+                let delete_result = std::process::Command::new("git")
                     .args(["branch", "-D", branch])
                     .output();
+
+                if delete_result.is_ok() && delete_result.as_ref().unwrap().status.success() {
+                    output_manager.success(&format!(
+                        "Deleted branch '{}' (was {}).",
+                        branch, old_commit_short
+                    ));
+                } else {
+                    output_manager.warning(&format!("warning: couldn't delete '{}'", branch));
+                }
             }
         } else {
             // Branch appears not merged
