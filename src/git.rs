@@ -1,123 +1,233 @@
-use anyhow::{anyhow, Result};
-use git2::{Repository, BranchType};
-use std::path::Path;
+use anyhow::{Context, Result};
+use regex::Regex;
+use std::process::Command;
+use std::str;
 
-pub struct Repo {
-    repo: Repository,
+#[derive(Debug, Clone)]
+pub struct Remote {
+    pub name: String,
 }
 
-impl Repo {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let repo = Repository::open(path)?;
-        Ok(Repo { repo })
+pub fn is_git_repo() -> Result<bool> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .output()
+        .context("Failed to execute git rev-parse")?;
+
+    Ok(output.status.success())
+}
+
+pub fn get_main_remote() -> Result<Remote> {
+    let remotes = get_remotes()?;
+
+    if remotes.is_empty() {
+        return Err(anyhow::anyhow!("No git remotes found"));
     }
 
-    pub fn current_branch(&self) -> Result<String> {
-        let head = self.repo.head()?;
-        let name = head.shorthand()
-            .ok_or_else(|| anyhow!("Could not determine current branch"))?;
-        Ok(name.to_string())
+    // Priority order: upstream, github, origin, others
+    let priority_order = ["upstream", "github", "origin"];
+
+    for priority in priority_order {
+        if let Some(remote) = remotes.iter().find(|r| r.name == priority) {
+            return Ok(remote.clone());
+        }
     }
 
-    pub fn local_branches(&self) -> Result<Vec<Branch>> {
-        let mut branches = Vec::new();
-        let branch_iter = self.repo.branches(Some(BranchType::Local))?;
+    // Return first remote if no priority match
+    Ok(remotes[0].clone())
+}
 
-        for result in branch_iter {
-            let (branch, _) = result?;
-            if let Ok(name) = branch.name() {
-                if let Some(name) = name {
-                    if let Ok(upstream) = branch.upstream() {
-                        if let Ok(upstream_name) = upstream.name() {
-                            if let Some(upstream_name) = upstream_name {
-                                branches.push(Branch {
-                                    name: name.to_string(),
-                                    tracking: Some(upstream_name.to_string()),
-                                });
-                            }
-                        }
+pub fn get_remotes() -> Result<Vec<Remote>> {
+    let output = Command::new("git")
+        .args(["remote", "-v"])
+        .output()
+        .context("Failed to execute git remote -v")?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("Failed to get remotes"));
+    }
+
+    let output_str = str::from_utf8(&output.stdout)?;
+    let mut remotes = Vec::new();
+
+    for line in output_str.lines() {
+        if line.ends_with("(fetch)") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let name = parts[0].to_string();
+                remotes.push(Remote { name });
+            }
+        }
+    }
+
+    Ok(remotes)
+}
+
+pub fn get_default_branch(remote: &Remote) -> Result<String> {
+    // Try to get symbolic ref for remote HEAD first
+    let output = Command::new("git")
+        .args([
+            "symbolic-ref",
+            &format!("refs/remotes/{}/HEAD", remote.name),
+        ])
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let ref_str = str::from_utf8(&output.stdout)?;
+            let ref_str = ref_str.trim();
+            let prefix = format!("refs/remotes/{}/", remote.name);
+            if ref_str.starts_with(&prefix) {
+                return Ok(ref_str[prefix.len()..].to_string());
+            }
+        }
+    }
+
+    // Check if main branch exists on remote
+    if has_remote_branch(&format!("refs/remotes/{}/main", remote.name))? {
+        return Ok("main".to_string());
+    }
+
+    // Check if master branch exists on remote
+    if has_remote_branch(&format!("refs/remotes/{}/master", remote.name))? {
+        return Ok("master".to_string());
+    }
+
+    // Default to main (modern default)
+    Ok("main".to_string())
+}
+
+pub fn get_current_branch() -> Result<String> {
+    let output = Command::new("git")
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output()
+        .context("Failed to execute git symbolic-ref")?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("Failed to get current branch"));
+    }
+
+    let branch = str::from_utf8(&output.stdout)?;
+    Ok(branch.trim().to_string())
+}
+
+pub fn has_remote_branch(remote_branch: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .args(["show-ref", "--verify", "--quiet", remote_branch])
+        .output()
+        .context("Failed to execute git show-ref")?;
+
+    Ok(output.status.success())
+}
+
+pub fn get_branch_to_remote_mapping() -> Result<std::collections::HashMap<String, String>> {
+    let output = Command::new("git")
+        .args(["config", "--get-regexp", r"^branch\..*\.remote$"])
+        .output();
+
+    let mut mapping = std::collections::HashMap::new();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let output_str = str::from_utf8(&output.stdout)?;
+            let re = Regex::new(r"^branch\.(.+?)\.remote (.+)")?;
+
+            for line in output_str.lines() {
+                if let Some(captures) = re.captures(line) {
+                    if captures.len() >= 3 {
+                        let branch = captures[1].to_string();
+                        let remote = captures[2].to_string();
+                        mapping.insert(branch, remote);
                     }
                 }
             }
         }
-
-        Ok(branches)
     }
 
-    pub fn can_fastforward(&self, local_name: &str, upstream: &str) -> Result<bool> {
-        let local_ref = self.repo.find_reference(&format!("refs/heads/{}", local_name))?;
-        let upstream_ref = self.repo.find_reference(&format!("refs/remotes/{}", upstream))?;
-
-        let local_oid = local_ref.target().ok_or_else(|| anyhow!("Invalid local ref"))?;
-        let upstream_oid = upstream_ref.target().ok_or_else(|| anyhow!("Invalid upstream ref"))?;
-
-        Ok(local_oid != upstream_oid)
-    }
-
-    pub fn fastforward(&self, branch_name: &str, upstream: &str) -> Result<bool> {
-        let upstream_ref = self.repo.find_reference(&format!("refs/remotes/{}", upstream))?;
-        let upstream_oid = upstream_ref.target().ok_or_else(|| anyhow!("Invalid upstream ref"))?;
-
-        let mut local_ref = self.repo.find_reference(&format!("refs/heads/{}", branch_name))?;
-        let local_oid = local_ref.target().ok_or_else(|| anyhow!("Invalid local ref"))?;
-
-        if local_oid == upstream_oid {
-            return Ok(false);
-        }
-
-        local_ref.set_target(upstream_oid, "fast-forward")?;
-        Ok(true)
-    }
-
-    pub fn is_merged(&self, branch_name: &str, into_branch: &str) -> Result<bool> {
-        let branch_ref = self.repo.find_reference(&format!("refs/heads/{}", branch_name))?;
-        let branch_oid = branch_ref.target().ok_or_else(|| anyhow!("Invalid branch ref"))?;
-
-        let into_ref = self.repo.find_reference(&format!("refs/heads/{}", into_branch))?;
-        let into_oid = into_ref.target().ok_or_else(|| anyhow!("Invalid target ref"))?;
-
-        if branch_oid == into_oid {
-            return Ok(true);
-        }
-
-        // Use merge_base to check if branch is ancestor of into_branch
-        match self.repo.merge_base(branch_oid, into_oid) {
-            Ok(merge_oid) => Ok(merge_oid == branch_oid),
-            Err(_) => Ok(false),
-        }
-    }
-
-    pub fn upstream_exists(&self, upstream: &str) -> Result<bool> {
-        self.repo
-            .find_reference(&format!("refs/remotes/{}", upstream))
-            .map(|_| true)
-            .or_else(|_| Ok(false))
-    }
-
-    pub fn delete_branch(&self, branch_name: &str) -> Result<()> {
-        let mut branch = self.repo.find_branch(branch_name, BranchType::Local)?;
-        branch.delete()?;
-        Ok(())
-    }
-
-    pub fn fetch(&self) -> Result<()> {
-        match self.repo.find_remote("origin") {
-            Ok(mut remote) => {
-                let refspecs: &[&str] = &[];
-                remote.fetch(refspecs, None, None)?;
-                Ok(())
-            }
-            Err(e) => {
-                // If origin doesn't exist, that's okay - maybe it's a local-only repo
-                eprintln!("Warning: Could not fetch from 'origin': {}", e);
-                Ok(())
-            }
-        }
-    }
+    Ok(mapping)
 }
 
-#[derive(Debug, Clone)]
-pub struct Branch {
-    pub name: String,
-    pub tracking: Option<String>,
+pub fn get_local_branches() -> Result<Vec<String>> {
+    let output = Command::new("git")
+        .args(["branch", "--format=%(refname:short)"])
+        .output()
+        .context("Failed to execute git branch")?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("Failed to get local branches"));
+    }
+
+    let output_str = str::from_utf8(&output.stdout)?;
+    let mut branches = Vec::new();
+
+    for line in output_str.lines() {
+        let branch = line.trim();
+        if !branch.is_empty() {
+            branches.push(branch.to_string());
+        }
+    }
+
+    Ok(branches)
+}
+
+pub fn fetch_from_remote(remote: &Remote, dry_run: bool) -> Result<()> {
+    if dry_run {
+        println!("[DRY RUN] Would fetch from remote: {}", remote.name);
+        return Ok(());
+    }
+
+    let output = Command::new("git")
+        .args(["fetch", "--prune", "--quiet", "--progress", &remote.name])
+        .output()
+        .context("Failed to execute git fetch")?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("Failed to fetch from {}", remote.name));
+    }
+
+    Ok(())
+}
+
+pub fn get_commit_difference(branch1: &str, branch2: &str) -> Result<(i32, i32)> {
+    // Get commits ahead
+    let ahead_output = Command::new("git")
+        .args(["rev-list", "--count", &format!("{}..{}", branch2, branch1)])
+        .output()
+        .context("Failed to execute git rev-list for ahead count")?;
+
+    if !ahead_output.status.success() {
+        return Err(anyhow::anyhow!("Failed to get ahead commit count"));
+    }
+
+    let ahead_str = str::from_utf8(&ahead_output.stdout)?;
+    let ahead = ahead_str.trim().parse::<i32>()?;
+
+    // Get commits behind
+    let behind_output = Command::new("git")
+        .args(["rev-list", "--count", &format!("{}..{}", branch1, branch2)])
+        .output()
+        .context("Failed to execute git rev-list for behind count")?;
+
+    if !behind_output.status.success() {
+        return Err(anyhow::anyhow!("Failed to get behind commit count"));
+    }
+
+    let behind_str = str::from_utf8(&behind_output.stdout)?;
+    let behind = behind_str.trim().parse::<i32>()?;
+
+    Ok((ahead, behind))
+}
+
+pub fn get_commit_sha(ref_spec: &str) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", ref_spec])
+        .output()
+        .context("Failed to execute git rev-parse")?;
+
+    if !output.status.success() {
+        return Ok("unknown".to_string());
+    }
+
+    let sha = str::from_utf8(&output.stdout)?;
+    Ok(sha.trim().to_string())
 }
