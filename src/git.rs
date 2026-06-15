@@ -188,34 +188,63 @@ pub fn fetch_from_remote(remote: &Remote, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn get_commit_difference(branch1: &str, branch2: &str) -> Result<(i32, i32)> {
-    // Get commits ahead
-    let ahead_output = Command::new("git")
-        .args(["rev-list", "--count", &format!("{}..{}", branch2, branch1)])
+pub fn is_ancestor(ancestor: &str, descendant: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
         .output()
-        .context("Failed to execute git rev-list for ahead count")?;
+        .context("Failed to execute git merge-base")?;
 
-    if !ahead_output.status.success() {
-        return Err(anyhow::anyhow!("Failed to get ahead commit count"));
+    Ok(output.status.success())
+}
+
+pub fn is_merged(branch: &str, into: &str) -> Result<bool> {
+    // Check if branch is fully merged into 'into' branch
+    // A branch is considered merged if there are no commits in the branch that are not in 'into'
+
+    // Check if there are any commits in branch that are not in 'into'
+    let output = Command::new("git")
+        .args(["rev-list", &format!("{}..{}", into, branch)])
+        .output()
+        .context("Failed to execute git rev-list")?;
+
+    // If there are no commits in branch that are not in 'into', then it's merged
+    Ok(!output.status.success() || output.stdout.is_empty())
+}
+
+pub fn is_identical(ref1: &str, ref2: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{}^{{commit}}", ref1),
+            &format!("{}^{{commit}}", ref2),
+        ])
+        .output()
+        .context("Failed to execute git rev-parse for identity check")?;
+
+    // If both refs resolve to the same commit, rev-parse will succeed
+    // But we need to check if the commits are actually the same
+    if !output.status.success() {
+        return Ok(false);
     }
 
-    let ahead_str = str::from_utf8(&ahead_output.stdout)?;
-    let ahead = ahead_str.trim().parse::<i32>()?;
+    let commit1 = str::from_utf8(&output.stdout)?;
+    let commit1 = commit1.trim();
 
-    // Get commits behind
-    let behind_output = Command::new("git")
-        .args(["rev-list", "--count", &format!("{}..{}", branch1, branch2)])
+    let commit2_output = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", ref2])
         .output()
-        .context("Failed to execute git rev-list for behind count")?;
+        .context("Failed to execute git rev-parse")?;
 
-    if !behind_output.status.success() {
-        return Err(anyhow::anyhow!("Failed to get behind commit count"));
+    if !commit2_output.status.success() {
+        return Ok(false);
     }
 
-    let behind_str = str::from_utf8(&behind_output.stdout)?;
-    let behind = behind_str.trim().parse::<i32>()?;
+    let commit2 = str::from_utf8(&commit2_output.stdout)?;
+    let commit2 = commit2.trim();
 
-    Ok((ahead, behind))
+    Ok(commit1 == commit2)
 }
 
 pub fn get_commit_sha(ref_spec: &str) -> Result<String> {
@@ -228,6 +257,6 @@ pub fn get_commit_sha(ref_spec: &str) -> Result<String> {
         return Ok("unknown".to_string());
     }
 
-    let sha = str::from_utf8(&output.stdout)?;
-    Ok(sha.trim().to_string())
+    let result = str::from_utf8(&output.stdout)?;
+    Ok(result.trim().to_string())
 }

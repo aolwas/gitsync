@@ -52,7 +52,7 @@ fn run() -> Result<()> {
     let branches = git::get_local_branches().context("Failed to get local branches")?;
 
     // Process each branch
-    let full_default_branch = format!("refs/remotes/{}/{}", remote.name, default_branch);
+    let local_default_branch = format!("refs/heads/{}", default_branch);
 
     for branch in branches {
         sync::process_branch(
@@ -61,7 +61,7 @@ fn run() -> Result<()> {
             &branch_to_remote,
             &current_branch,
             &default_branch,
-            &full_default_branch,
+            &local_default_branch,
             args.dry_run,
             &output,
         )
