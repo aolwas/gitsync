@@ -49,9 +49,9 @@ jobs:
           # Find the gitsync binary (it might not have an extension on Unix)
           if [ -f gitsync ]; then
             chmod +x gitsync
-            tar -czf ../../../../../../artifacts/gitsync-${{ matrix.platform.target }}.tar.gz gitsync
+            tar -czf ../../../artifacts/gitsync-${{ matrix.platform.target }}.tar.gz gitsync
           elif [ -f gitsync.exe ]; then
-            tar -czf ../../../../../../artifacts/gitsync-${{ matrix.platform.target }}.zip gitsync.exe
+            tar -czf ../../../artifacts/gitsync-${{ matrix.platform.target }}.zip gitsync.exe
           fi
 
       - name: Upload artifacts
