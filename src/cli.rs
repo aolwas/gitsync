@@ -14,6 +14,10 @@ pub struct Args {
     /// Dry run (show what would be done without making changes)
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pub dry_run: bool,
+
+    /// Continue on error (process all branches even if some fail)
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub continue_on_error: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

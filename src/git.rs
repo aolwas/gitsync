@@ -1,7 +1,8 @@
-use anyhow::{Context, Result};
 use regex::Regex;
 use std::process::Command;
 use std::str;
+
+use crate::error::{GitSyncError, Result};
 
 #[derive(Debug, Clone)]
 pub struct Remote {
@@ -12,7 +13,12 @@ pub fn is_git_repo() -> Result<bool> {
     let output = Command::new("git")
         .args(["rev-parse", "--git-dir"])
         .output()
-        .context("Failed to execute git rev-parse")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: "git rev-parse --git-dir".to_string(),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to check if directory is a git repository".to_string()),
+        })?;
 
     Ok(output.status.success())
 }
@@ -21,7 +27,7 @@ pub fn get_main_remote() -> Result<Remote> {
     let remotes = get_remotes()?;
 
     if remotes.is_empty() {
-        return Err(anyhow::anyhow!("No git remotes found"));
+        return Err(GitSyncError::NoRemotesFound);
     }
 
     // Priority order: upstream, github, origin, others
@@ -41,13 +47,25 @@ pub fn get_remotes() -> Result<Vec<Remote>> {
     let output = Command::new("git")
         .args(["remote", "-v"])
         .output()
-        .context("Failed to execute git remote -v")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: "git remote -v".to_string(),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to get remotes".to_string()),
+        })?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!("Failed to get remotes"));
+        return Err(GitSyncError::GitCommandError {
+            command: "git remote -v".to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+            stderr: String::from_utf8(output.stderr)
+                .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?,
+            context: Some("Failed to get remotes".to_string()),
+        });
     }
 
-    let output_str = str::from_utf8(&output.stdout)?;
+    let output_str = str::from_utf8(&output.stdout)
+        .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
     let mut remotes = Vec::new();
 
     for line in output_str.lines() {
@@ -70,16 +88,21 @@ pub fn get_default_branch(remote: &Remote) -> Result<String> {
             "symbolic-ref",
             &format!("refs/remotes/{}/HEAD", remote.name),
         ])
-        .output();
+        .output()
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git symbolic-ref refs/remotes/{}/HEAD", remote.name),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to get remote HEAD symbolic ref".to_string()),
+        })?;
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let ref_str = str::from_utf8(&output.stdout)?;
-            let ref_str = ref_str.trim();
-            let prefix = format!("refs/remotes/{}/", remote.name);
-            if ref_str.starts_with(&prefix) {
-                return Ok(ref_str[prefix.len()..].to_string());
-            }
+    if output.status.success() {
+        let ref_str = str::from_utf8(&output.stdout)
+            .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
+        let ref_str = ref_str.trim();
+        let prefix = format!("refs/remotes/{}/", remote.name);
+        if ref_str.starts_with(&prefix) {
+            return Ok(ref_str[prefix.len()..].to_string());
         }
     }
 
@@ -101,13 +124,19 @@ pub fn get_current_branch() -> Result<String> {
     let output = Command::new("git")
         .args(["symbolic-ref", "--short", "HEAD"])
         .output()
-        .context("Failed to execute git symbolic-ref")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: "git symbolic-ref --short HEAD".to_string(),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to get current branch".to_string()),
+        })?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!("Failed to get current branch"));
+        return Err(GitSyncError::CurrentBranchError);
     }
 
-    let branch = str::from_utf8(&output.stdout)?;
+    let branch = str::from_utf8(&output.stdout)
+        .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
     Ok(branch.trim().to_string())
 }
 
@@ -115,7 +144,12 @@ pub fn has_remote_branch(remote_branch: &str) -> Result<bool> {
     let output = Command::new("git")
         .args(["show-ref", "--verify", "--quiet", remote_branch])
         .output()
-        .context("Failed to execute git show-ref")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git show-ref --verify --quiet {}", remote_branch),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to check if remote branch exists".to_string()),
+        })?;
 
     Ok(output.status.success())
 }
@@ -129,8 +163,10 @@ pub fn get_branch_to_remote_mapping() -> Result<std::collections::HashMap<String
 
     if let Ok(output) = output {
         if output.status.success() {
-            let output_str = str::from_utf8(&output.stdout)?;
-            let re = Regex::new(r"^branch\.(.+?)\.remote (.+)")?;
+            let output_str = str::from_utf8(&output.stdout)
+                .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
+            let re = Regex::new(r"^branch\.(.+?)\.remote (.+)")
+                .map_err(|e| GitSyncError::RegexError(e))?;
 
             for line in output_str.lines() {
                 if let Some(captures) = re.captures(line) {
@@ -151,13 +187,19 @@ pub fn get_local_branches() -> Result<Vec<String>> {
     let output = Command::new("git")
         .args(["branch", "--format=%(refname:short)"])
         .output()
-        .context("Failed to execute git branch")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: "git branch --format=%(refname:short)".to_string(),
+            exit_code: -1,
+            stderr: e.to_string(),
+            context: Some("Failed to get local branches".to_string()),
+        })?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!("Failed to get local branches"));
+        return Err(GitSyncError::ParseError("Failed to get local branches".to_string()));
     }
 
-    let output_str = str::from_utf8(&output.stdout)?;
+    let output_str = str::from_utf8(&output.stdout)
+        .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
     let mut branches = Vec::new();
 
     for line in output_str.lines() {
@@ -179,10 +221,20 @@ pub fn fetch_from_remote(remote: &Remote, dry_run: bool) -> Result<()> {
     let output = Command::new("git")
         .args(["fetch", "--prune", "--quiet", "--progress", &remote.name])
         .output()
-        .context("Failed to execute git fetch")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git fetch --prune --quiet --progress {}", remote.name),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to fetch from remote".to_string()),
+        })?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!("Failed to fetch from {}", remote.name));
+        return Err(GitSyncError::NetworkError(format!(
+            "Failed to fetch from {}: {}",
+            remote.name,
+            String::from_utf8(output.stderr)
+                .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?
+        )));
     }
 
     Ok(())
@@ -192,7 +244,12 @@ pub fn is_ancestor(ancestor: &str, descendant: &str) -> Result<bool> {
     let output = Command::new("git")
         .args(["merge-base", "--is-ancestor", ancestor, descendant])
         .output()
-        .context("Failed to execute git merge-base")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git merge-base --is-ancestor {} {}", ancestor, descendant),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to check if commit is ancestor".to_string()),
+        })?;
 
     Ok(output.status.success())
 }
@@ -205,7 +262,12 @@ pub fn is_merged(branch: &str, into: &str) -> Result<bool> {
     let output = Command::new("git")
         .args(["rev-list", &format!("{}..{}", into, branch)])
         .output()
-        .context("Failed to execute git rev-list")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git rev-list {}..{}", into, branch),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to check if branch is merged".to_string()),
+        })?;
 
     // If there are no commits in branch that are not in 'into', then it's merged
     Ok(!output.status.success() || output.stdout.is_empty())
@@ -221,7 +283,12 @@ pub fn is_identical(ref1: &str, ref2: &str) -> Result<bool> {
             &format!("{}^{{commit}}", ref2),
         ])
         .output()
-        .context("Failed to execute git rev-parse for identity check")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git rev-parse --verify --quiet {}^{{commit}} {}^{{commit}}", ref1, ref2),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to check if refs are identical".to_string()),
+        })?;
 
     // If both refs resolve to the same commit, rev-parse will succeed
     // But we need to check if the commits are actually the same
@@ -229,19 +296,26 @@ pub fn is_identical(ref1: &str, ref2: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    let commit1 = str::from_utf8(&output.stdout)?;
+    let commit1 = str::from_utf8(&output.stdout)
+        .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
     let commit1 = commit1.trim();
 
     let commit2_output = Command::new("git")
         .args(["rev-parse", "--verify", "--quiet", ref2])
         .output()
-        .context("Failed to execute git rev-parse")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git rev-parse --verify --quiet {}", ref2),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to get commit for ref".to_string()),
+        })?;
 
     if !commit2_output.status.success() {
         return Ok(false);
     }
 
-    let commit2 = str::from_utf8(&commit2_output.stdout)?;
+    let commit2 = str::from_utf8(&commit2_output.stdout)
+        .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
     let commit2 = commit2.trim();
 
     Ok(commit1 == commit2)
@@ -251,12 +325,21 @@ pub fn get_commit_sha(ref_spec: &str) -> Result<String> {
     let output = Command::new("git")
         .args(["rev-parse", ref_spec])
         .output()
-        .context("Failed to execute git rev-parse")?;
+        .map_err(|e| GitSyncError::GitCommandError {
+            command: format!("git rev-parse {}", ref_spec),
+            exit_code: e.raw_os_error().unwrap_or(-1),
+            stderr: e.to_string(),
+            context: Some("Failed to get commit SHA".to_string()),
+        })?;
 
     if !output.status.success() {
-        return Ok("unknown".to_string());
+        return Err(GitSyncError::commit_sha_parse_error(ref_spec));
     }
 
-    let result = str::from_utf8(&output.stdout)?;
+    let result = str::from_utf8(&output.stdout)
+        .map_err(|e| GitSyncError::Utf8Error(e.to_string()))?;
     Ok(result.trim().to_string())
 }
+
+
+
