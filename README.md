@@ -4,6 +4,9 @@ Git subcommand to synchronize local branches with remote repository. Fast-forwar
 
 > [!NOTE]
 > This project was created as a vibe-coding experiment to rewrite in Rust the very helpful sync command from [hub](https://github.com/mislav/hub/blob/master/commands/sync.go). Many thanks to the original authors for the time I've saved using their tool over the years.
+>
+> Initial code was developed using [GitHub Copilot](https://copilot.github.com/) and Anthropic's [Claude](https://www.anthropic.com/). 
+> I've then switched to [Pi](https://pi.dev/) and [Mistral](https://mistral.ai/) models.
 
 > [!WARNING]
 > This tool is mainly for personal use (but any improvement/fix requests are welcome). 
