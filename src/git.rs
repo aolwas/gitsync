@@ -30,8 +30,8 @@ pub fn get_main_remote() -> Result<Remote> {
         return Err(GitSyncError::NoRemotesFound);
     }
 
-    // Priority order: upstream, github, origin, others
-    let priority_order = ["upstream", "github", "origin"];
+    // Priority order: upstream, origin, others
+    let priority_order = ["upstream", "origin"];
 
     for priority in priority_order {
         if let Some(remote) = remotes.iter().find(|r| r.name == priority) {
@@ -41,6 +41,16 @@ pub fn get_main_remote() -> Result<Remote> {
 
     // Return first remote if no priority match
     Ok(remotes[0].clone())
+}
+
+pub fn get_remote_by_name(name: &str) -> Result<Remote> {
+    let remotes = get_remotes()?;
+    
+    if let Some(remote) = remotes.iter().find(|r| r.name == name) {
+        return Ok(remote.clone());
+    }
+    
+    Err(GitSyncError::RemoteNotFound(name.to_string()))
 }
 
 pub fn get_remotes() -> Result<Vec<Remote>> {

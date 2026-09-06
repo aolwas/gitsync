@@ -16,14 +16,8 @@ pub enum GitSyncError {
     #[error("No git remotes found")]
     NoRemotesFound,
 
-    #[error("Failed to determine default branch")]
-    DefaultBranchError,
-
     #[error("Failed to get current branch")]
     CurrentBranchError,
-
-    #[error("Branch '{0}' not found")]
-    BranchNotFound(String),
 
     #[error("Remote '{0}' not found")]
     RemoteNotFound(String),
@@ -31,32 +25,11 @@ pub enum GitSyncError {
     #[error("Failed to parse git output: {0}")]
     ParseError(String),
 
-    #[error("Failed to parse git output for default branch")]
-    DefaultBranchParseError,
-
-    #[error("Failed to parse git output for branch mapping")]
-    BranchMappingParseError,
-
     #[error("Failed to parse git output for commit SHA: {0}")]
     CommitShaParseError(String),
 
-    #[error("Permission denied: {0}")]
-    PermissionError(String),
-
     #[error("Network error: {0}")]
     NetworkError(String),
-
-    #[error("Branch '{0}' has unpushed commits")]
-    UnpushedCommits(String),
-
-    #[error("Branch '{0}' is not merged into '{1}")]
-    BranchNotMerged(String, String),
-
-    #[error("Failed to update branch '{0}': {1}")]
-    BranchUpdateError(String, String),
-
-    #[error("Failed to delete branch '{0}': {1}")]
-    BranchDeleteError(String, String),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -87,17 +60,13 @@ impl GitSyncError {
                 stderr,
             },
             GitSyncError::ParseError(msg) => GitSyncError::ParseError(format!("{}: {}", context, msg)),
-            GitSyncError::CommitShaParseError(ref_spec) => GitSyncError::CommitShaParseError(format!("{}: {}", context, ref_spec)),
+            GitSyncError::CommitShaParseError(ref_spec) => {
+                GitSyncError::CommitShaParseError(format!("{}: {}", context, ref_spec))
+            }
             GitSyncError::NetworkError(msg) => GitSyncError::NetworkError(format!("{}: {}", context, msg)),
-            GitSyncError::PermissionError(msg) => GitSyncError::PermissionError(format!("{}: {}", context, msg)),
-            GitSyncError::BranchNotMerged(branch, into) => GitSyncError::BranchNotMerged(branch, format!("{}: {}", context, into)),
-            GitSyncError::BranchUpdateError(branch, msg) => GitSyncError::BranchUpdateError(branch, format!("{}: {}", context, msg)),
-            GitSyncError::BranchDeleteError(branch, msg) => GitSyncError::BranchDeleteError(branch, format!("{}: {}", context, msg)),
             _ => self,
         }
     }
-
-
 }
 
 impl From<std::str::Utf8Error> for GitSyncError {

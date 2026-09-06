@@ -40,7 +40,11 @@ fn run() -> Result<(), GitSyncError> {
     }
 
     // Get main remote
-    let remote = git::get_main_remote()?;
+    let remote = if let Some(ref remote_name) = args.remote {
+        git::get_remote_by_name(remote_name)?
+    } else {
+        git::get_main_remote()?
+    };
     output.verbose(&format!("Using remote: {}", remote.name));
 
     // Get default branch
