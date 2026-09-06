@@ -1,6 +1,14 @@
 # Git Sync
 
-CLI tool to synchronize local Git branches with remote repository. Fast-forward updates local branches behind remote. Deletes local branches when remote branch deleted and merged into default.
+Git subcommand to synchronize local branches with remote repository. Fast-forward updates local branches behind remote. Deletes local branches when remote branch deleted and merged into default.
+
+> [!NOTE]
+> This project was created as a vibe-coding experiment to rewrite in Rust the very helpful sync command from [hub](https://github.com/mislav/hub/blob/master/commands/sync.go). Many thanks to the original authors for the time I've saved using their tool over the years.
+
+> [!WARNING]
+> This tool is mainly for personal use (but any improvement/fix requests are welcome). 
+>
+> While only operating locally, remember it performs destructive operations (branch deletion) and assumes you understand git workflows. Use with caution.
 
 ## Features
 
@@ -17,13 +25,15 @@ CLI tool to synchronize local Git branches with remote repository. Fast-forward 
 cargo install --path .
 ```
 
+This installs the `git-sync` binary. Make sure it's in your PATH.
+
 ## Usage
 
 ```bash
-gitsync [OPTIONS]
+git sync [OPTIONS]
 ```
 
-Options:
+## Options
 - `-v, --verbose` - Verbose output
 - `--color <CHOICE>` - Colorize output (always, never, auto)
 - `--dry-run` - Show what would be done without making changes
@@ -31,6 +41,33 @@ Options:
 - `-r, --remote <NAME>` - Remote to sync with (overrides auto-detection)
 
 ## Algorithm
+
+```mermaid
+flowchart TD
+    A[Start] --> B[For each local branch]
+    B --> C{Remote branch exists?}
+    C -->|No| D[Mark as gone]
+    C -->|Yes| E[Compare branches]
+    D --> F{Deleted on remote?}
+    F -->|Yes| G{Is merged into default?}
+    G -->|Yes| H[Delete local branch]
+    G -->|No| I[Warn: not merged]
+    F -->|No| J[Continue]
+    E --> K{Identical?}
+    K -->|Yes| L[Skip - no action]
+    K -->|No| M{Local behind remote?}
+    M -->|Yes| N[Fast-forward update]
+    M -->|No| O{Remote behind local?}
+    O -->|Yes| P[Warn: unpushed commits]
+    O -->|No| Q[Both at same commit]
+    N --> L
+    Q --> L
+    H --> B
+    I --> B
+    P --> B
+    J --> B
+    L --> B
+```
 
 ### Branch Synchronization Process
 
