@@ -18,6 +18,10 @@ pub struct Args {
     /// Continue on error (process all branches even if some fail)
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pub continue_on_error: bool,
+
+    /// Remote to sync with (overrides auto-detection)
+    #[arg(short, long)]
+    pub remote: Option<String>,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
