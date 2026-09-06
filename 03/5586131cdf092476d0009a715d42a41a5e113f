@@ -1,0 +1,26 @@
+src/main.rs
+  s_302ec5859a1b84::t_5cd4e015a19f94 43-47
+src/git.rs
+  s_302ec5859a1b84::t_ee4ef17d5c93fd 33-34,46-53
+  s_302ec5859a1b84::t_927b54e4801a8f 54-55
+src/cli.rs
+  s_302ec5859a1b84::t_758d25ff45d261 21-24
+src/error.rs
+  s_302ec5859a1b84::t_8a31dd912ce910 63-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "035586131cdf092476d0009a715d42a41a5e113f",
+  "prompts": {},
+  "sessions": {
+    "s_302ec5859a1b84": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a07597-76c7-7150-bb61-ed493d0f2c3c",
+        "model": "mistral-medium-3.5"
+      },
+      "human_author": "Maxime Cottret (aolwas) <maxime.cottret@gmail.com>"
+    }
+  }
+}
