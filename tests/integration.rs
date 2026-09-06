@@ -7,7 +7,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_cli_help() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--help");
 
     cmd.assert()
@@ -22,12 +22,12 @@ fn test_cli_help() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_cli_version() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--version");
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("gitsync"));
+        .stdout(predicate::str::contains("git-sync"));
 
     Ok(())
 }
@@ -37,7 +37,7 @@ fn test_non_git_directory() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let path = dir.path();
 
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.current_dir(path);
 
     cmd.assert()
@@ -84,7 +84,7 @@ fn test_git_repo_no_remotes() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--dry-run").current_dir(path);
 
     cmd.assert()
@@ -159,7 +159,7 @@ fn test_dry_run_with_remote() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--dry-run").arg("--verbose").current_dir(path);
 
     cmd.assert()
@@ -241,7 +241,7 @@ fn test_verbose_output() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--verbose").arg("--dry-run").current_dir(path);
 
     let output = cmd.output()?;
@@ -303,7 +303,7 @@ fn test_color_output() -> Result<(), Box<dyn std::error::Error>> {
         .current_dir(path)
         .output()?;
 
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--color")
         .arg("always")
         .arg("--dry-run")
@@ -382,7 +382,7 @@ fn test_branch_deletion_detection() -> Result<(), Box<dyn std::error::Error>> {
         .output()?;
 
     // Test that sync works with a basic repo setup
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--dry-run").arg("--verbose").current_dir(path);
 
     let output = cmd.output()?;
@@ -478,7 +478,7 @@ fn test_up_to_date_branch_detection() -> Result<(), Box<dyn std::error::Error>> 
         .output()?;
 
     // Test that sync doesn't crash and handles the basic scenario correctly
-    let mut cmd = Command::cargo_bin("gitsync")?;
+    let mut cmd = Command::cargo_bin("git-sync")?;
     cmd.arg("--dry-run")
         .arg("--verbose")
         .current_dir(path);
