@@ -1,0 +1,22 @@
+README.md
+  s_302ec5859a1b84::t_bb5b51ee1a437f 7
+  s_302ec5859a1b84::t_840226ee77635c 31
+  s_302ec5859a1b84::t_bf02268600bf79 2-6,8-30,32-73
+  s_302ec5859a1b84::t_e883eedeb51338 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "610b1fdfc720f995528e017ccb9d1f66d822c876",
+  "prompts": {},
+  "sessions": {
+    "s_302ec5859a1b84": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a07597-76c7-7150-bb61-ed493d0f2c3c",
+        "model": "mistral-medium-3.5"
+      },
+      "human_author": "Maxime Cottret (aolwas) <maxime.cottret@gmail.com>"
+    }
+  }
+}
