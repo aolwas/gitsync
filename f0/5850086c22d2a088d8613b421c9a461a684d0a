@@ -1,0 +1,20 @@
+tests/integration.rs
+  s_302ec5859a1b84::t_ffc8900a820627 30
+  s_302ec5859a1b84::t_d84c8d2d8c44cd 10,25,40,87,162,244,306,385,481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f05850086c22d2a088d8613b421c9a461a684d0a",
+  "prompts": {},
+  "sessions": {
+    "s_302ec5859a1b84": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a07597-76c7-7150-bb61-ed493d0f2c3c",
+        "model": "mistral-medium-3.5"
+      },
+      "human_author": "Maxime Cottret (aolwas) <maxime.cottret@gmail.com>"
+    }
+  }
+}
