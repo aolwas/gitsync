@@ -1,0 +1,14 @@
+README.md
+  h_7b37a126744e3a 7-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d5d7d3f31dc523d60566af175922ff1ec3ceaa6e",
+  "prompts": {},
+  "humans": {
+    "h_7b37a126744e3a": {
+      "author": "Maxime Cottret (aolwas) <maxime.cottret@gmail.com>"
+    }
+  }
+}
