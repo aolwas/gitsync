@@ -21,11 +21,25 @@ Git subcommand to synchronize local branches with remote repository. Fast-forwar
 
 ## Installation
 
+### Prebuilt Binaries
+
+Prebuilt binaries are available for Linux and macOS. Download the latest release from [GitHub Releases](https://github.com/aolwas/gitsync/releases).
+
+If you are using [mise](https://mise.jdx.dev/), you can install the prebuilt binary with:
+
+```bash
+mise install github:aolwas/gitsync
+```
+
+### Build from Source
+
+Clone the repository and build with Cargo:
+
 ```bash
 cargo install --path .
 ```
 
-This installs the `git-sync` binary. Make sure it's in your PATH.
+Make sure the [cargo bin path](https://doc.rust-lang.org/cargo/commands/cargo-install.html) is in your PATH.
 
 ## Usage
 
