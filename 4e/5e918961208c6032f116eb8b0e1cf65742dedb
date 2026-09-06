@@ -1,0 +1,15 @@
+.github/workflows/release.yml
+  h_7b37a126744e3a 52-57,71
+  h_7b37a126744e3a 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4e5e918961208c6032f116eb8b0e1cf65742dedb",
+  "prompts": {},
+  "humans": {
+    "h_7b37a126744e3a": {
+      "author": "Maxime Cottret (aolwas) <maxime.cottret@gmail.com>"
+    }
+  }
+}
