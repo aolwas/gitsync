@@ -1,0 +1,19 @@
+src/sync.rs
+  s_a4dfaeb3eb9d8e::t_ec69a4183130a4 167-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0dc16d27c653c6c26480499f17e47cc8ab3fed88",
+  "prompts": {},
+  "sessions": {
+    "s_a4dfaeb3eb9d8e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0c4f5-7121-7527-a489-a5afb850f446",
+        "model": "mistral-medium-3.5"
+      },
+      "human_author": "Maxime Cottret (aolwas) <maxime.cottret@gmail.com>"
+    }
+  }
+}
