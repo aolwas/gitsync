@@ -65,8 +65,6 @@ fn run() -> Result<(), GitSyncError> {
     let branches = git::get_local_branches()?;
 
     // Process each branch
-    let local_default_branch = format!("refs/heads/{}", default_branch);
-
     let mut processed_count = 0;
     let mut updated_count = 0;
     let mut deleted_count = 0;
@@ -84,7 +82,6 @@ fn run() -> Result<(), GitSyncError> {
             &branch_to_remote,
             &current_branch,
             &default_branch,
-            &local_default_branch,
             args.dry_run,
             &output,
         ) {

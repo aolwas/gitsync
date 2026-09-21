@@ -48,13 +48,11 @@ pub fn process_branch(
     branch_to_remote: &HashMap<String, String>,
     current_branch: &str,
     default_branch: &str,
-    local_default_branch: &str,
     dry_run: bool,
     output_manager: &OutputManager,
 ) -> Result<BranchAction> {
     let full_branch = format!("refs/heads/{}", branch);
     let mut remote_branch = format!("refs/remotes/{}/{}", remote.name, branch);
-    let mut gone = false;
 
     // Check if branch has upstream configuration
     if let Some(branch_remote) = branch_to_remote.get(branch) {
@@ -82,7 +80,6 @@ pub fn process_branch(
                 Err(_) => {
                     // Upstream is gone or error getting SHA
                     remote_branch = String::new();
-                    gone = true;
                 }
             }
         }
@@ -167,10 +164,12 @@ pub fn process_branch(
             ));
             return Ok(BranchAction::Warning);
         }
-    } else if gone {
-        // Remote branch was deleted
-        if is_merged(&full_branch, local_default_branch)? {
-            // Branch is ancestor of default branch, safe to delete
+    } else {
+        // Remote branch was deleted (either upstream gone or remote branch doesn't exist)
+        // Check if merged into the remote's default branch (not local, which may be behind)
+        let remote_default_branch = format!("refs/remotes/{}/{}", remote.name, default_branch);
+        if is_merged(&full_branch, &remote_default_branch)? {
+            // Branch is ancestor of remote default branch, safe to delete
             let old_commit = get_commit_sha(&full_branch)?;
             let old_commit_short = if old_commit.len() > 7 {
                 &old_commit[..7]
